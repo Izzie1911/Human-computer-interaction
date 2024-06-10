@@ -6,10 +6,12 @@ import numpy as np
 
 # variables
 frame_counter = 0
-CEF_COUNTER = 0
-TOTAL_BLINKS = 0
+CEF_LEFT_COUNTER = 0
+CEF_RIGHT_COUNTER = 0
+TOTAL_BLINKS_RIGHT=0
+TOTAL_BLINKS_LEFT=0
 # constants
-CLOSED_EYES_FRAME = 3
+CLOSED_EYES_FRAME = 4
 FONTS = cv.FONT_HERSHEY_COMPLEX
 
 # face bounder indices
@@ -86,8 +88,9 @@ def blinkRatio(img, landmarks, right_indices, left_indices):
     reRatio = rhDistance / rvDistance
     leRatio = lhDistance / lvDistance
 
-    ratio = (reRatio + leRatio) / 2
-    return ratio
+    ratio = (reRatio+leRatio)/2
+
+    return reRatio, leRatio,ratio
 
 
 # Eyes Extrctor function,
@@ -135,58 +138,6 @@ def eyesExtractor(img, right_eye_coords, left_eye_coords):
     return cropped_right, cropped_left
 
 
-# Eyes Postion Estimator
-def positionEstimator(cropped_eye):
-    # getting height and width of eye
-    h, w = cropped_eye.shape
-
-    # remove the noise from images
-    gaussain_blur = cv.GaussianBlur(cropped_eye, (9, 9), 0)
-    median_blur = cv.medianBlur(gaussain_blur, 3)
-
-    # applying thrsholding to convert binary_image
-    ret, threshed_eye = cv.threshold(median_blur, 130, 255, cv.THRESH_BINARY)
-
-    # create fixd part for eye with
-    piece = int(w / 3)
-
-    # slicing the eyes into three parts
-    right_piece = threshed_eye[0:h, 0:piece]
-    center_piece = threshed_eye[0:h, piece: piece + piece]
-    left_piece = threshed_eye[0:h, piece + piece:w]
-
-    # calling pixel counter function
-    eye_position, color = pixelCounter(right_piece, center_piece, left_piece)
-
-    return eye_position, color
-
-
-# creating pixel counter function
-def pixelCounter(first_piece, second_piece, third_piece):
-    # counting black pixel in each part
-    right_part = np.sum(first_piece == 0)
-    center_part = np.sum(second_piece == 0)
-    left_part = np.sum(third_piece == 0)
-    # creating list of these values
-    eye_parts = [right_part, center_part, left_part]
-
-    # getting the index of max values in the list
-    max_index = eye_parts.index(max(eye_parts))
-    pos_eye = ''
-    if max_index == 0:
-        pos_eye = "RIGHT"
-        color = [utils.BLACK, utils.GREEN]
-    elif max_index == 1:
-        pos_eye = 'CENTER'
-        color = [utils.YELLOW, utils.PINK]
-    elif max_index == 2:
-        pos_eye = 'LEFT'
-        color = [utils.GRAY, utils.YELLOW]
-    else:
-        pos_eye = "Closed"
-        color = [utils.GRAY, utils.YELLOW]
-    return pos_eye, color
-
 
 with map_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5) as face_mesh:
     # starting time here
@@ -205,28 +156,38 @@ with map_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidenc
         results = face_mesh.process(rgb_frame)
         if results.multi_face_landmarks:
             mesh_coords = landmarksDetection(frame, results, False)
-            ratio = blinkRatio(frame, mesh_coords, RIGHT_EYE, LEFT_EYE)
+            reRatio, leRatio, ratio = blinkRatio(frame, mesh_coords, RIGHT_EYE, LEFT_EYE)
             # cv.putText(frame, f'ratio {ratio}', (100, 100), FONTS, 1.0, utils.GREEN, 2)
-            utils.colorBackgroundText(frame, f'Ratio : {round(ratio, 2)}', FONTS, 0.7, (30, 100), 2, utils.PINK,
+            utils.colorBackgroundText(frame, f'reRatio : {round(reRatio, 2)}', FONTS, 0.7, (30, 100), 2, utils.PINK,
+                                      utils.YELLOW)
+            utils.colorBackgroundText(frame, f'leRatio : {round(leRatio, 2)}', FONTS, 0.7, (30, 140), 2, utils.PINK,
                                       utils.YELLOW)
 
-            if ratio > 3.5:
-                CEF_COUNTER += 1
-                # cv.putText(frame, 'Blink', (200, 50), FONTS, 1.3, utils.PINK, 2)
-                utils.colorBackgroundText(frame, f'Blink', FONTS, 1.7, (int(frame_height / 2), 100), 2, utils.YELLOW,
-                                          pad_x=6, pad_y=6, )
+            if ratio >3.0:
+                if leRatio > 3.0:
+                    CEF_LEFT_COUNTER += 1
 
-            else:
-                if CEF_COUNTER > CLOSED_EYES_FRAME:
-                    TOTAL_BLINKS += 1
-                    CEF_COUNTER = 0
+                else:
+                    if CEF_LEFT_COUNTER > CLOSED_EYES_FRAME:
+                        TOTAL_BLINKS_LEFT += 1
+                        CEF_LEFT_COUNTER = 0
+
+                if reRatio > 3.0:
+                    CEF_RIGHT_COUNTER += 1
+
+                else:
+                    if CEF_RIGHT_COUNTER > CLOSED_EYES_FRAME:
+                        TOTAL_BLINKS_RIGHT += 1
+                        CEF_RIGHT_COUNTER = 0
+
             # cv.putText(frame, f'Total Blinks: {TOTAL_BLINKS}', (100, 150), FONTS, 0.6, utils.GREEN, 2)
-            utils.colorBackgroundText(frame, f'Total Blinks: {TOTAL_BLINKS}', FONTS, 0.7, (30, 150), 2)
 
             cv.polylines(frame, [np.array([mesh_coords[p] for p in LEFT_EYE], dtype=np.int32)], True, utils.GREEN, 1,
                          cv.LINE_AA)
             cv.polylines(frame, [np.array([mesh_coords[p] for p in RIGHT_EYE], dtype=np.int32)], True, utils.GREEN, 1,
                          cv.LINE_AA)
+
+
 
             # Blink Detector Counter Completed
             right_coords = [mesh_coords[p] for p in RIGHT_EYE]
@@ -234,11 +195,8 @@ with map_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidenc
             crop_right, crop_left = eyesExtractor(frame, right_coords, left_coords)
             # cv.imshow('right', crop_right)
             # cv.imshow('left', crop_left)
-            eye_position, color = positionEstimator(crop_right)
-            utils.colorBackgroundText(frame, f'R: {eye_position}', FONTS, 1.0, (40, 220), 2, color[0], color[1], 8, 8)
-            eye_position_left, color = positionEstimator(crop_left)
-            utils.colorBackgroundText(frame, f'L: {eye_position_left}', FONTS, 1.0, (40, 320), 2, color[0], color[1], 8,
-                                      8)
+            utils.colorBackgroundText(frame, f'R: {TOTAL_BLINKS_RIGHT}', FONTS, 1.0, (40, 220), 2, 8, bgColor=(100, 100, 100))
+            utils.colorBackgroundText(frame, f'L: {TOTAL_BLINKS_LEFT}', FONTS, 1.0, (40, 320), 2,  8,  bgColor=(100, 100, 100))
 
         # calculating  frame per seconds FPS
         end_time = time.time() - start_time
