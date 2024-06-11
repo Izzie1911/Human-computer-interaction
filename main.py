@@ -139,6 +139,10 @@ def eyesExtractor(img, right_eye_coords, left_eye_coords):
 
 
 
+start = time.time_ns()
+file =  open("output.csv", "w")
+file.write("Time,leRatio,reRatio,Ratio\n")
+
 with map_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidence=0.5) as face_mesh:
     # starting time here
     start_time = time.time()
@@ -163,23 +167,21 @@ with map_face_mesh.FaceMesh(min_detection_confidence=0.5, min_tracking_confidenc
             utils.colorBackgroundText(frame, f'leRatio : {round(leRatio, 2)}', FONTS, 0.7, (30, 140), 2, utils.PINK,
                                       utils.YELLOW)
 
-            if ratio >3.0:
-                if leRatio > 3.0:
-                    CEF_LEFT_COUNTER += 1
+            record_time = time.time_ns()
+            file.write(f"{record_time - start_time},{leRatio},{reRatio},{ratio}\n")
 
-                else:
-                    if CEF_LEFT_COUNTER > CLOSED_EYES_FRAME:
-                        TOTAL_BLINKS_LEFT += 1
-                        CEF_LEFT_COUNTER = 0
-
-                if reRatio > 3.0:
-                    CEF_RIGHT_COUNTER += 1
-
-                else:
-                    if CEF_RIGHT_COUNTER > CLOSED_EYES_FRAME:
-                        TOTAL_BLINKS_RIGHT += 1
-                        CEF_RIGHT_COUNTER = 0
-
+            if leRatio > 3.5 and leRatio > reRatio:
+                CEF_LEFT_COUNTER += 1
+            else:
+                if CEF_LEFT_COUNTER > CLOSED_EYES_FRAME:
+                    TOTAL_BLINKS_LEFT += 1
+                    CEF_LEFT_COUNTER = 0
+            if reRatio > 3.5 and reRatio > leRatio:
+                CEF_RIGHT_COUNTER += 1
+            else:
+                if CEF_RIGHT_COUNTER > CLOSED_EYES_FRAME:
+                    TOTAL_BLINKS_RIGHT += 1
+                    CEF_RIGHT_COUNTER = 0
             # cv.putText(frame, f'Total Blinks: {TOTAL_BLINKS}', (100, 150), FONTS, 0.6, utils.GREEN, 2)
 
             cv.polylines(frame, [np.array([mesh_coords[p] for p in LEFT_EYE], dtype=np.int32)], True, utils.GREEN, 1,
